@@ -1,0 +1,65 @@
+from airflow import DAG
+from airflow.operators.bash_operator import BashOperator
+from airflow.utils.dates import days_ago
+from datetime import timedelta
+
+# Define the DAG arguments
+default_args = {
+    'owner': 'airflow',            
+    'start_date': days_ago(1),     
+    'email': ['andredasilvarocco@gmail.com'],
+    'email_on_failure':True,
+    'email_on_retry':True,
+    'retries':1,
+    'retry_delay':timedelta(minutes = 5)    
+}
+
+# Define the DAG
+dag = DAG(
+    'process_web_log',             # DAG ID
+    default_args=default_args,     # Pass the defined arguments
+    description='ETL process for processing web log data',  # DAG description
+    schedule_interval='@daily',    # The DAG will run daily
+    catchup=False,
+)
+
+#Extract Data
+extract_command = """
+    grep -oP '^\d+\.\d+\.\d+\.\d+' /home/project/airflow/dags/capstone/accesslog.txt > /home/project/airflow/dags/capstone/extracted_data.txt
+"""
+
+# Define the extract_data task
+extract_data_task = BashOperator(
+    task_id='extract_data',
+    bash_command=extract_command,  # Bash command to run
+    dag=dag,
+)
+
+#Transform Data
+# Bash command to filter out specific IP and save to transformed_data.txt
+transform_command = """
+    grep -v '198.46.149.143' /home/project/airflow/dags/capstone/extracted_data.txt > /home/project/airflow/dags/capstone/transformed_data.txt
+"""
+
+# Define the transform_data task using BashOperator
+transform_data_task = BashOperator(
+    task_id='transform_data',
+    bash_command=transform_command,  # Bash command to run
+    dag=dag,
+)
+
+#Load Data
+# Bash command to archive transformed_data.txt into a tar file
+load_command = """
+    tar -cvf /home/project/airflow/dags/capstone/weblog.tar -C /home/project/airflow/dags/capstone transformed_data.txt
+"""
+
+# Define the load_data task using BashOperator
+load_data_task = BashOperator(
+    task_id='load_data',
+    bash_command=load_command,  # Bash command to run
+    dag=dag,
+)
+
+# Set Pipeline dependencies
+extract_data_task >> transform_data_task >> load_data_task
